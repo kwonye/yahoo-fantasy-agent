@@ -1,38 +1,37 @@
-## Project Overview
+# Project guide
 
-This project is a Node.js server that provides an interface to the Yahoo Fantasy Sports API. It uses the Express framework to create a web server and the `simple-oauth2` library to handle OAuth2 authentication with Yahoo. The server exposes endpoints for authentication and for fetching data from the Yahoo API. The `axios` library is used to make HTTP requests to the Yahoo API, and `xml2js` is used to parse the XML responses from the API.
+This repository contains a local stdio Model Context Protocol server for the
+Yahoo Fantasy Sports API. It is implemented in strict TypeScript on Node.js
+20.19 or newer and uses the MCP TypeScript SDK v2.
 
-## Building and Running
+## Development
 
-### Prerequisites
+Install dependencies and run the complete release gate:
 
-*   Node.js and npm installed.
+```sh
+npm ci
+npm run verify
+npm pack --dry-run
+```
 
-### Installation
+`npm run verify` checks types, lint, formatting, tests, and the production
+build. Keep all source in `src/`, tests in `tests/`, and generated output in
+`dist/`.
 
-1.  Install dependencies from `package.json`:
-    ```bash
-    npm install
-    ```
+## Architecture
 
-### Configuration
+- `src/config.ts` validates environment-only Yahoo configuration.
+- `src/yahoo/` owns OAuth, secure token persistence, HTTP behavior, XML
+  parsing, and documented write payloads.
+- `src/mcp/` owns tool schemas, Yahoo resource paths, annotations, and MCP
+  result/error translation.
+- `src/cli.ts` provides auth, status, logout, doctor, smoke, and stdio-server
+  commands.
 
-1.  Add your Yahoo API credentials to `config.js`.
+Do not log or commit Yahoo credentials or tokens. Writes must not be retried
+automatically. Keep the advanced API tool GET-only and constrained to relative
+Yahoo Fantasy API paths. Any new mutation must match Yahoo's documented XML
+contract and include focused tests.
 
-### Running the Server
-
-1.  Start the server:
-    ```bash
-    npm start
-    ```
-
-The server will start on `http://localhost:3000`.
-
-## Development Conventions
-
-*   The project uses CommonJS modules (`require`/`module.exports`).
-*   The main application logic is in `index.js`.
-*   Authentication logic is separated in `auth.js`.
-*   Configuration is stored in `config.js`.
-*   The server stores the access token in `token.json`. This file is created after successful authentication and is read on server startup.
-*   There are no tests in the project. The `test` script in `package.json` is a placeholder.
+The npm release workflow uses trusted publishing through GitHub Actions OIDC.
+Never add a long-lived npm token to the workflow.

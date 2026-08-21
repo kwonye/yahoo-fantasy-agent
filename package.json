@@ -1,21 +1,83 @@
 {
-  "name": "yahoo-fantasy-sports-mcp-server",
+  "name": "@kwonye/yahoo-fantasy-mcp",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js"
+  "description": "A comprehensive Model Context Protocol server for the Yahoo Fantasy Sports API",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
-  "keywords": [],
+  "bin": {
+    "yahoo-fantasy-mcp": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    ".env.example"
+  ],
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "auth": "tsx src/cli.ts auth",
+    "status": "tsx src/cli.ts status",
+    "doctor": "tsx src/cli.ts doctor",
+    "smoke": "tsx src/cli.ts smoke",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run build",
+    "prepack": "npm run verify"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "yahoo",
+    "fantasy-sports",
+    "fantasy-football",
+    "fantasy-baseball",
+    "fantasy-basketball",
+    "fantasy-hockey"
+  ],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kwonye/yahoo-fantasy-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kwonye/yahoo-fantasy-mcp/issues"
+  },
+  "homepage": "https://github.com/kwonye/yahoo-fantasy-mcp#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "dependencies": {
-    "axios": "^1.11.0",
-    "express": "^5.1.0",
-    "simple-oauth2": "^5.1.0",
-    "xml2js": "^0.6.2",
-    "dotenv": "^16.4.5"
+    "@modelcontextprotocol/server": "2.0.0",
+    "fast-xml-parser": "^5.11.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "@modelcontextprotocol/client": "2.0.0",
+    "@types/node": "^26.0.0",
+    "@vitest/coverage-v8": "^4.1.11",
+    "eslint": "^10.0.0",
+    "prettier": "^3.9.0",
+    "tsx": "^4.20.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.67.0",
+    "vitest": "^4.1.11"
   }
 }

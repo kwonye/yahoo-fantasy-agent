@@ -1,0 +1,121 @@
+name: Publish to npm
+
+on:
+  release:
+    types: [published]
+
+# npm Trusted Publishing exchanges this job's short-lived OIDC identity for a
+# publish credential. Do not add an NPM_TOKEN secret to this workflow.
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Verify and publish the release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the released tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+
+      - name: Set up Node.js for npm trusted publishing
+        uses: actions/setup-node@v6
+        with:
+          # npm trusted publishing requires Node >=22.14 and npm >=11.5.1.
+          node-version: "24.x"
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Check the trusted-publishing runtime
+        run: |
+          node --version
+          npm --version
+          node <<'NODE'
+          const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
+          if (nodeMajor < 22 || (nodeMajor === 22 && nodeMinor < 14)) {
+            throw new Error(`Node ${process.versions.node} is too old for npm trusted publishing`);
+          }
+          const [npmMajor, npmMinor, npmPatch] = require('child_process')
+            .execFileSync('npm', ['--version'], { encoding: 'utf8' })
+            .trim()
+            .split('.')
+            .map(Number);
+          if (npmMajor < 11 || (npmMajor === 11 && (npmMinor < 5 || (npmMinor === 5 && npmPatch < 1)))) {
+            throw new Error(`npm ${npmMajor}.${npmMinor}.${npmPatch} is too old for trusted publishing`);
+          }
+          NODE
+
+      - name: Validate release tag and package identity
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const tag = process.env.RELEASE_TAG;
+          if (!/^v\d+\.\d+\.\d+$/.test(tag)) {
+            throw new Error(`Release tag must be a semver tag such as v2.0.0; received ${tag}`);
+          }
+          if (packageJson.private === true) {
+            throw new Error('package.json is private; refusing to publish');
+          }
+          if (packageJson.name !== '@kwonye/yahoo-fantasy-mcp') {
+            throw new Error(`Unexpected npm package name: ${packageJson.name}`);
+          }
+          NODE
+
+      - name: Set package version from the release tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          release_version="${RELEASE_TAG#v}"
+          npm version "$release_version" \
+            --no-git-tag-version \
+            --allow-same-version \
+            --ignore-scripts
+          node <<'NODE'
+          const fs = require('node:fs');
+          const expected = process.env.RELEASE_TAG.slice(1);
+          const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const packageLock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          for (const [label, actual] of [
+            ['package.json', packageJson.version],
+            ['package-lock.json', packageLock.version],
+            ['package-lock root package', packageLock.packages[''].version],
+          ]) {
+            if (actual !== expected) {
+              throw new Error(`${label} version ${actual} does not match release ${expected}`);
+            }
+          }
+          console.log(`Publishing ${packageJson.name}@${expected}`);
+          NODE
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run release verification
+        run: npm run verify
+
+      - name: Check the release tarball
+        run: npm pack --dry-run
+
+      - name: Smoke-test the global executable
+        run: |
+          package_dir="$(mktemp -d)"
+          npm pack --ignore-scripts --pack-destination "$package_dir" >/dev/null
+          package_file="$(find "$package_dir" -maxdepth 1 -name '*.tgz' -print -quit)"
+          npm install --global --ignore-scripts --prefix "$package_dir/prefix" "$package_file"
+          help_output="$("$package_dir/prefix/bin/yahoo-fantasy-mcp" --help)"
+          printf '%s\n' "$help_output"
+          grep -Fq 'Usage: yahoo-fantasy-mcp' <<<"$help_output"
+
+      - name: Publish public package with npm trusted publishing
+        run: npm publish --access public

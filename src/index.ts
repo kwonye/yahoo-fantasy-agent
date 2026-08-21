@@ -1,0 +1,95 @@
+import { serveStdio } from "@modelcontextprotocol/server/stdio";
+import packageJson from "../package.json" with { type: "json" };
+import { loadConfig } from "./config.js";
+import { createMcpServer } from "./mcp/server.js";
+import type { McpRuntime } from "./mcp/types.js";
+import { YahooClient } from "./yahoo/client.js";
+import { YahooOAuth } from "./yahoo/oauth.js";
+import { SecureTokenStore } from "./yahoo/token-store.js";
+import { redactedMessage } from "./yahoo/errors.js";
+
+export { createMcpServer } from "./mcp/server.js";
+export type { McpRuntime, YahooApi } from "./mcp/types.js";
+export * from "./yahoo/index.js";
+
+/**
+ * Run the server over stdio. The factory creates a fresh MCP instance for the
+ * connection as required by the v2 SDK; no application logs are written to
+ * stdout while this function is serving protocol messages.
+ */
+export function serveYahooFantasy(
+  runtime: McpRuntime,
+  options: { name?: string; version?: string } = {},
+): { close(): Promise<void> } {
+  const serverOptions =
+    options.name === undefined
+      ? { version: options.version ?? packageJson.version }
+      : { name: options.name, version: options.version ?? packageJson.version };
+  return serveStdio(() => createMcpServer(runtime, serverOptions), {
+    onerror: (error) => console.error(`[yahoo-fantasy-mcp] ${error.message}`),
+  });
+}
+
+export function loadDefaultRuntime(): Promise<McpRuntime> {
+  try {
+    process.loadEnvFile();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const config = loadConfig();
+  const store = new SecureTokenStore(config.tokenPath);
+  const oauth = new YahooOAuth(config, store);
+  const yahoo = new YahooClient(config, oauth);
+  return Promise.resolve({
+    yahoo,
+    auth: {
+      authorize: () => oauth.authorizationUrl(),
+      authenticate: (code: string) => oauth.authenticate(code),
+      status: async () => {
+        const token = await oauth.readToken();
+        if (!token)
+          return { authenticated: false, tokenPath: config.tokenPath };
+        return {
+          authenticated: true,
+          tokenPath: config.tokenPath,
+          expiresAt: token.expiresAt,
+          scope: token.scope,
+          tokenType: token.tokenType,
+        };
+      },
+      logout: () => oauth.clear(),
+    },
+    doctor: async () => {
+      const token = await oauth.readToken();
+      let api: Record<string, unknown>;
+      if (token) {
+        try {
+          const response = await yahoo.get("users;use_login=1/games");
+          api = { reachable: true, status: response.status };
+        } catch (error) {
+          api = { reachable: false, error: redactedMessage(error) };
+        }
+      } else {
+        api = {
+          reachable: false,
+          skipped: true,
+          reason: "Authenticate before checking Yahoo API reachability",
+        };
+      }
+      return {
+        config: {
+          apiBaseUrl: config.apiBaseUrl,
+          oauthBaseUrl: config.oauthBaseUrl,
+          redirectUri: config.redirectUri,
+          scopes: config.scopes,
+        },
+        token: {
+          present: token !== null,
+          expiresAt: token?.expiresAt,
+          scope: token?.scope,
+        },
+        api,
+      };
+    },
+  });
+}

@@ -1,2 +1,18 @@
-node_modules
+node_modules/
+
+# Local configuration and OAuth credentials.
+.env
+.env.*
+!.env.example
 token.json
+*.token.json
+.tokens/
+
+# Build, test, coverage, and package artifacts.
+dist/
+coverage/
+*.tgz
+*.log
+
+# Operating-system metadata.
+.DS_Store
