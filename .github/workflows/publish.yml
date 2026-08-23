@@ -117,5 +117,44 @@ jobs:
           printf '%s\n' "$help_output"
           grep -Fq 'Usage: yahoo-fantasy-mcp' <<<"$help_output"
 
+      - name: Smoke-test the built Streamable HTTP endpoint
+        run: |
+          node --input-type=module <<'NODE'
+          import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+          import { serveYahooFantasyHttp } from './dist/index.js';
+
+          const runtime = {
+            yahoo: {
+              get: async (path) => ({ status: 200, data: { path } }),
+              post: async (path, body) => ({ status: 200, data: { path, body } }),
+              put: async (path, body) => ({ status: 200, data: { path, body } }),
+              delete: async (path) => ({ status: 200, data: { path } }),
+            },
+          };
+          const handle = await serveYahooFantasyHttp(runtime, {
+            config: {
+              host: '127.0.0.1',
+              port: 0,
+              path: '/mcp',
+              responseMode: 'auto',
+              allowedHosts: ['localhost', '127.0.0.1', '[::1]'],
+              allowedOrigins: ['localhost', '127.0.0.1', '[::1]'],
+            },
+          });
+          const client = new Client(
+            { name: 'release-http-smoke', version: '1.0.0' },
+            { versionNegotiation: { mode: 'auto' } },
+          );
+          try {
+            await client.connect(new StreamableHTTPClientTransport(handle.url));
+            if (client.getProtocolEra() !== 'modern') throw new Error('HTTP smoke did not negotiate modern MCP');
+            const listed = await client.listTools();
+            if (listed.tools.length < 40) throw new Error('HTTP smoke returned an incomplete tool catalog');
+          } finally {
+            await client.close();
+            await handle.close();
+          }
+          NODE
+
       - name: Publish public package with npm trusted publishing
         run: npm publish --access public

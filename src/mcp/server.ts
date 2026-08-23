@@ -8,14 +8,14 @@ export interface McpServerOptions {
   version?: string;
 }
 
-/** Build a fresh MCP server instance for one stdio connection. */
+/** Build a fresh MCP server instance for one protocol serving unit. */
 export function createMcpServer(
   runtime: McpRuntime,
   options: McpServerOptions = {},
 ): McpServer {
   const server = new McpServer(
     {
-      name: options.name ?? packageJson.name,
+      name: options.name ?? "yahoo-fantasy-mcp",
       version: options.version ?? packageJson.version,
     },
     { capabilities: { tools: {} } },

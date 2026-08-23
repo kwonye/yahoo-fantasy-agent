@@ -1,8 +1,8 @@
 # Yahoo Fantasy Sports MCP
 
 An MCP server for Yahoo Fantasy Sports. It supports Yahoo Fantasy Football,
-Baseball, Basketball, and Hockey through a local stdio process, with OAuth 2.0
-authentication and typed read and write tools.
+Baseball, Basketball, and Hockey through local stdio or MCP v2 Streamable HTTP,
+with OAuth 2.0 authentication and typed read and write tools.
 
 [![CI](https://github.com/kwonye/yahoo-fantasy-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/kwonye/yahoo-fantasy-mcp/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@kwonye/yahoo-fantasy-mcp)](https://www.npmjs.com/package/@kwonye/yahoo-fantasy-mcp)
@@ -23,6 +23,26 @@ yahoo-fantasy-mcp auth
 yahoo-fantasy-mcp status
 yahoo-fantasy-mcp
 ```
+
+For an HTTP deployment, start the MCP v2 Streamable HTTP endpoint explicitly:
+
+```sh
+yahoo-fantasy-mcp serve --transport http
+```
+
+The default listener is `http://127.0.0.1:3000/mcp`. Override the host, port,
+path, or response shape with flags or the corresponding `MCP_HTTP_*` variables:
+
+```sh
+yahoo-fantasy-mcp serve --transport http \
+  --host 127.0.0.1 --port 3000 --path /mcp --response-mode auto
+```
+
+`auto` returns normal JSON for request/response calls and upgrades to an SSE
+stream when the protocol needs server-to-client streaming. Use `sse` to always
+stream or `json` to disable streaming for ordinary exchanges. This is the
+current Streamable HTTP transport; the deprecated `/sse` plus `/messages`
+server transport is not exposed.
 
 For a checkout or a release candidate, use `npm install` followed by
 `npm run build`, or run the TypeScript CLI with `npm run dev`.
@@ -111,6 +131,19 @@ alternative for clients that support `npx` is:
 The server writes protocol messages only to stdout. Diagnostics go to stderr,
 so MCP clients can launch it without a logging or JSON framing conflict.
 
+For an HTTP-capable MCP client, configure the endpoint URL instead of a local
+command. For example:
+
+```json
+{
+  "mcpServers": {
+    "yahoo-fantasy": {
+      "url": "http://127.0.0.1:3000/mcp"
+    }
+  }
+}
+```
+
 ## Available tools
 
 Tool names are stable and grouped by the Yahoo resource they operate on. Every
@@ -179,6 +212,12 @@ if you need to exercise a write.
   from Yahoo account settings when a machine is lost or no longer trusted.
 - Error messages redact authorization headers, client secrets, tokens, and
   OAuth response bodies that could contain credentials.
+- HTTP binds to loopback by default and validates Host and Origin headers to
+  prevent DNS rebinding. A non-loopback bind requires `MCP_HTTP_TOKEN` and an
+  explicit `MCP_HTTP_ALLOWED_HOSTS` list; put TLS and any broader access policy
+  in front of the process with a trusted reverse proxy.
+- The MCP bearer token is a deployment credential only. Yahoo OAuth tokens
+  remain local to the server and are never accepted from MCP callers.
 - Treat lineup, roster, waiver, FAAB, trade, and commissioner tools as
   consequential actions. The MCP annotations identify read-only versus
   destructive operations so compatible clients can apply their own approval

@@ -3,15 +3,99 @@ import { realpathSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { fileURLToPath } from "node:url";
-import { loadDefaultRuntime, serveYahooFantasy } from "./index.js";
+import {
+  loadDefaultRuntime,
+  serveYahooFantasy,
+  serveYahooFantasyHttp,
+} from "./index.js";
+import {
+  loadHttpConfig,
+  type HttpConfig,
+  type HttpConfigOverrides,
+} from "./config.js";
+import type { YahooHttpServerHandle } from "./http.js";
 import { safely, stringify } from "./mcp/helpers.js";
 import type { McpRuntime } from "./mcp/types.js";
 
 export interface CliDependencies {
   loadRuntime?: () => Promise<McpRuntime>;
   serve?: (runtime: McpRuntime) => { close(): Promise<void> };
+  serveHttp?: (
+    runtime: McpRuntime,
+    config: HttpConfig,
+  ) => Promise<YahooHttpServerHandle>;
   input?: NodeJS.ReadableStream;
   output?: NodeJS.WritableStream;
+}
+
+interface ServeArguments extends HttpConfigOverrides {
+  transport: "stdio" | "http";
+}
+
+function optionValue(
+  argv: readonly string[],
+  index: number,
+  option: string,
+): string {
+  const value = argv[index + 1];
+  if (value === undefined || value.startsWith("--"))
+    throw new Error(`${option} requires a value`);
+  return value;
+}
+
+function parseServeArguments(argv: readonly string[]): ServeArguments {
+  const parsed: ServeArguments = { transport: "stdio" };
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    switch (argument) {
+      case "--transport": {
+        const value = optionValue(argv, index, argument);
+        if (value !== "stdio" && value !== "http")
+          throw new Error("--transport must be stdio or http");
+        parsed.transport = value;
+        index += 1;
+        break;
+      }
+      case "--host":
+        parsed.host = optionValue(argv, index, argument);
+        index += 1;
+        break;
+      case "--port": {
+        const value = optionValue(argv, index, argument);
+        const port = Number(value);
+        if (!Number.isSafeInteger(port) || port < 0 || port > 65_535)
+          throw new Error("--port must be an integer between 0 and 65535");
+        parsed.port = port;
+        index += 1;
+        break;
+      }
+      case "--path":
+        parsed.path = optionValue(argv, index, argument);
+        index += 1;
+        break;
+      case "--response-mode": {
+        const value = optionValue(argv, index, argument);
+        if (value !== "auto" && value !== "sse" && value !== "json")
+          throw new Error("--response-mode must be auto, sse, or json");
+        parsed.responseMode = value;
+        index += 1;
+        break;
+      }
+      default:
+        throw new Error(`Unknown serve option ${JSON.stringify(argument)}`);
+    }
+  }
+  if (parsed.transport === "stdio") {
+    const httpOption = [
+      parsed.host,
+      parsed.port,
+      parsed.path,
+      parsed.responseMode,
+    ].some((value) => value !== undefined);
+    if (httpOption)
+      throw new Error("HTTP serve options require --transport http");
+  }
+  return parsed;
 }
 
 function print(stream: NodeJS.WritableStream, value: unknown): void {
@@ -98,14 +182,35 @@ export async function runCli(
   if (command === "help" || command === "--help" || command === "-h") {
     print(
       writable,
-      "Usage: yahoo-fantasy-mcp [auth|status|logout|doctor|smoke]\nWithout a command, serve MCP over stdio.",
+      "Usage: yahoo-fantasy-mcp [auth|status|logout|doctor|smoke|serve]\nWithout a command, serve MCP over stdio.\n\nHTTP: yahoo-fantasy-mcp serve --transport http [--host HOST] [--port PORT] [--path PATH] [--response-mode auto|sse|json]",
     );
     return;
   }
-  const runtime = await (dependencies.loadRuntime ?? loadDefaultRuntime)();
   const readable = dependencies.input ?? input;
   switch (command) {
     case "serve": {
+      const serveArguments = parseServeArguments(argv.slice(1));
+      const runtime = await (dependencies.loadRuntime ?? loadDefaultRuntime)();
+      if (serveArguments.transport === "http") {
+        const config = loadHttpConfig(process.env, serveArguments);
+        const server = await (
+          dependencies.serveHttp ??
+          ((value: McpRuntime, httpConfig: HttpConfig) =>
+            serveYahooFantasyHttp(value, { config: httpConfig }))
+        )(runtime, config);
+        const shutdown = (): void => {
+          void server.close();
+        };
+        process.once("SIGINT", shutdown);
+        process.once("SIGTERM", shutdown);
+        try {
+          await server.closed;
+        } finally {
+          process.off("SIGINT", shutdown);
+          process.off("SIGTERM", shutdown);
+        }
+        return;
+      }
       const server = (
         dependencies.serve ?? ((value: McpRuntime) => serveYahooFantasy(value))
       )(runtime);
@@ -122,15 +227,25 @@ export async function runCli(
       return;
     }
     case "auth":
-      return auth(runtime, readable, writable);
     case "status":
-      return commandStatus(runtime, writable);
     case "logout":
-      return commandLogout(runtime, writable);
     case "doctor":
-      return commandDoctor(runtime, writable);
-    case "smoke":
-      return commandSmoke(runtime, writable);
+    case "smoke": {
+      const runtime = await (dependencies.loadRuntime ?? loadDefaultRuntime)();
+      switch (command) {
+        case "auth":
+          return auth(runtime, readable, writable);
+        case "status":
+          return commandStatus(runtime, writable);
+        case "logout":
+          return commandLogout(runtime, writable);
+        case "doctor":
+          return commandDoctor(runtime, writable);
+        case "smoke":
+          return commandSmoke(runtime, writable);
+      }
+      return;
+    }
     default:
       throw new Error(
         `Unknown command ${JSON.stringify(command)}; use --help for usage`,

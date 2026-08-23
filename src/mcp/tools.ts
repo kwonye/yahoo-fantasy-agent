@@ -1,9 +1,9 @@
 import type {
   McpServer,
-  CallToolResult,
-  ToolAnnotations,
+  StandardSchemaWithJSON,
+  ToolCallback,
 } from "@modelcontextprotocol/server";
-import { z } from "zod";
+import * as z from "zod/v4";
 import {
   buildRosterPayload,
   buildTradePayload,
@@ -50,6 +50,7 @@ const writeAnnotations = {
   idempotentHint: false,
   openWorldHint: true,
 } as const;
+const toolOutputSchema = z.record(z.string(), z.unknown());
 
 function title(name: string): string {
   return name
@@ -58,33 +59,26 @@ function title(name: string): string {
     .join(" ");
 }
 
-function add<S extends z.ZodObject<z.ZodRawShape>>(
+function add<S extends StandardSchemaWithJSON>(
   server: McpServer,
   name: string,
   description: string,
   schema: S,
-  handler: (args: z.infer<S>) => Promise<unknown>,
+  handler: (args: StandardSchemaWithJSON.InferOutput<S>) => Promise<unknown>,
   write = false,
 ): void {
-  const registerTool = server.registerTool.bind(server) as unknown as (
-    toolName: string,
-    config: {
-      title: string;
-      description: string;
-      inputSchema: z.ZodType;
-      annotations: ToolAnnotations;
-    },
-    callback: (args: Record<string, unknown>) => Promise<CallToolResult>,
-  ) => unknown;
-  registerTool(
+  const callback: ToolCallback<StandardSchemaWithJSON> = async (args) =>
+    safely(() => handler(args));
+  server.registerTool<StandardSchemaWithJSON, StandardSchemaWithJSON>(
     name,
     {
       title: title(name),
       description,
       inputSchema: schema,
+      outputSchema: toolOutputSchema,
       annotations: write ? writeAnnotations : readAnnotations,
     },
-    async (args) => safely(() => handler(args as z.infer<S>)),
+    callback,
   );
 }
 

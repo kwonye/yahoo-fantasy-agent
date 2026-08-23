@@ -11,6 +11,21 @@ import { redactedMessage } from "./yahoo/errors.js";
 export { createMcpServer } from "./mcp/server.js";
 export type { McpRuntime, YahooApi } from "./mcp/types.js";
 export * from "./yahoo/index.js";
+export { isLoopbackHost, loadHttpConfig } from "./config.js";
+export type {
+  HttpConfig,
+  HttpConfigOverrides,
+  HttpResponseMode,
+} from "./config.js";
+export {
+  createYahooFantasyHttpHandler,
+  serveYahooFantasyHttp,
+} from "./http.js";
+export type {
+  YahooHttpHandlerOptions,
+  YahooHttpServerHandle,
+  YahooHttpServerOptions,
+} from "./http.js";
 
 /**
  * Run the server over stdio. The factory creates a fresh MCP instance for the
