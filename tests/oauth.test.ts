@@ -122,4 +122,28 @@ describe("Yahoo OAuth", () => {
     expect(bodyText(refreshInit?.body)).toContain("redirect_uri=oob");
     expect(bodyText(refreshInit?.body)).toContain("refresh_token=refresh");
   });
+
+  it("classifies invalid Yahoo app credentials as configuration errors", async () => {
+    const fetchImpl = vi.fn(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            error: "invalid_client",
+            error_description: "Client credentials are invalid",
+          }),
+          {
+            status: 401,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      ),
+    );
+    const oauth = new YahooOAuth(config(), memoryStore() as never, {
+      fetchImpl,
+    });
+    await expect(oauth.authenticate("auth-code")).rejects.toMatchObject({
+      kind: "configuration",
+      status: 401,
+    });
+  });
 });

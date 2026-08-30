@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -35,5 +35,16 @@ describe("SecureTokenStore", () => {
     );
     expect(token.refreshToken).toBe("rotated");
     expect(token.expiresAt).toBe(2_000_000_000_000);
+  });
+
+  it("classifies corrupt token files as token-store failures", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "yahoo-mcp-token-"));
+    const path = join(directory, "token.json");
+    await writeFile(path, "not json", "utf8");
+    const store = new SecureTokenStore(path);
+    await expect(store.read()).rejects.toMatchObject({
+      name: "YahooError",
+      kind: "token_store",
+    });
   });
 });

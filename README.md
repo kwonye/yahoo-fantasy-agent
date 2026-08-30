@@ -88,6 +88,15 @@ yahoo-fantasy-mcp smoke    # authenticated, read-only Yahoo request checks
 yahoo-fantasy-mcp logout   # remove the local authorization cache
 ```
 
+The MCP service completes its handshake even when Yahoo application
+credentials are missing. Call `yahoo_diagnose` first when setup is uncertain.
+Yahoo tool failures are returned as `isError: true` results with structured
+`error.code`, `error.message`, `error.action`, and `error.retryable` fields.
+HTTP status, Yahoo request IDs, and rate-limit retry timing are included when
+available. The `action` field is intended to tell an agent exactly what to do,
+for example setting `YAHOO_CLIENT_ID` and `YAHOO_CLIENT_SECRET`, restarting the
+server, and running `yahoo-fantasy-mcp auth`.
+
 ## MCP client configuration
 
 Add a server entry to the client that supports MCP stdio servers. Keep the
@@ -155,6 +164,7 @@ periods.
 
 | Group       | Capabilities                                                                                                                                                              |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Diagnostics | Report safe Yahoo configuration, authentication, token-store, and API reachability state                                                                                  |
 | User        | List the authenticated user's games, leagues, and owned teams                                                                                                             |
 | Game        | Game metadata, supported dates, weeks, stat categories, position types, roster positions, leagues, and players                                                            |
 | League      | League metadata and settings, standings, scoreboard, teams, player search, draft results, and transactions                                                                |
@@ -165,6 +175,7 @@ periods.
 
 The registered read tool names are:
 
+- Diagnostics: `yahoo_diagnose`.
 - User: `yahoo_user_games`, `yahoo_user_leagues`, `yahoo_user_teams`.
 - Game: `yahoo_game`, `yahoo_game_dates`, `yahoo_game_weeks`,
   `yahoo_game_stat_categories`, `yahoo_game_position_types`,
@@ -198,6 +209,17 @@ Writes are sent only once and are never automatically retried. Review the
 league, team, player, and transaction keys before invoking a mutation. Yahoo
 does not provide a general-purpose Fantasy Sports sandbox, so use a test league
 if you need to exercise a write.
+
+### Error recovery
+
+Agents should use the stable error code and `action` field to choose the next
+step. Authentication errors direct the agent to `yahoo-fantasy-mcp auth`;
+permission errors identify Yahoo application approval or Read/Write access;
+invalid arguments and missing resources direct the agent to correct the
+request; rate limits include `retryAfterMs`; and network, upstream, or parse
+errors direct the agent to retry and use `yahoo-fantasy-mcp doctor` if the
+problem continues. Token-store errors direct the user to verify
+`YAHOO_TOKEN_PATH`, run `logout`, and authenticate again.
 
 ## Security and privacy
 

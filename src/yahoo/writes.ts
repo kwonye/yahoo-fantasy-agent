@@ -1,4 +1,5 @@
 import { renderYahooXml, xmlNode, type XmlNode } from "./xml.js";
+import { YahooError } from "./errors.js";
 
 export type RosterCoverage =
   | { readonly type: "week"; readonly value: number }
@@ -11,12 +12,13 @@ export interface RosterPlayer {
 
 function requiredString(value: string, name: string): string {
   if (typeof value !== "string" || value.trim() === "")
-    throw new Error(`${name} must not be empty`);
+    throw new YahooError("validation", `${name} must not be empty`);
   return value.trim();
 }
 
 function playersXml(players: readonly RosterPlayer[]): XmlNode {
-  if (players.length === 0) throw new Error("At least one player is required");
+  if (players.length === 0)
+    throw new YahooError("validation", "At least one player is required");
   return xmlNode(
     "players",
     players.map((player) =>
@@ -37,10 +39,16 @@ export function buildRosterPayload(
     coverage.type === "week" &&
     (!Number.isSafeInteger(coverage.value) || coverage.value < 1)
   ) {
-    throw new Error("Roster week must be a positive integer");
+    throw new YahooError(
+      "validation",
+      "Roster week must be a positive integer",
+    );
   }
   if (coverage.type === "date" && !/^\d{4}-\d{2}-\d{2}$/.test(coverage.value)) {
-    throw new Error("Roster date must use YYYY-MM-DD format");
+    throw new YahooError(
+      "validation",
+      "Roster date must use YYYY-MM-DD format",
+    );
   }
   return renderYahooXml(
     xmlNode(
@@ -78,7 +86,10 @@ export interface TransactionPayload {
 
 function nonNegativeInteger(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value < 0)
-    throw new Error(`${name} must be a non-negative integer`);
+    throw new YahooError(
+      "validation",
+      `${name} must be a non-negative integer`,
+    );
   return value;
 }
 
@@ -115,9 +126,12 @@ function transactionDataXml(player: TransactionPlayer): XmlNode {
 /** Build the POST body for adds, drops, waiver claims, and trades. */
 export function buildTransactionPayload(payload: TransactionPayload): string {
   if (typeof payload.type !== "string" || payload.type.trim() === "")
-    throw new Error("Transaction type must not be empty");
+    throw new YahooError("validation", "Transaction type must not be empty");
   if (payload.players.length === 0)
-    throw new Error("At least one transaction player is required");
+    throw new YahooError(
+      "validation",
+      "At least one transaction player is required",
+    );
   const transaction: XmlNode[] = [xmlNode("type", payload.type.trim())];
   if (payload.destinationTeamKey !== undefined)
     transaction.push(
@@ -182,7 +196,10 @@ export interface TradePayload {
 /** Build Yahoo's documented POST body for proposing a trade. */
 export function buildTradePayload(payload: TradePayload): string {
   if (payload.players.length === 0)
-    throw new Error("At least one traded player is required");
+    throw new YahooError(
+      "validation",
+      "At least one traded player is required",
+    );
   const transaction: XmlNode[] = [
     xmlNode("type", "pending_trade"),
     xmlNode(
@@ -286,7 +303,7 @@ export function buildWaiverEditPayload(payload: WaiverEditPayload): string {
       xmlNode("faab_bid", nonNegativeInteger(payload.faabBid, "faabBid")),
     );
   if (nodes.length <= 2)
-    throw new Error("waiverPriority or faabBid is required");
+    throw new YahooError("validation", "waiverPriority or faabBid is required");
   return renderYahooXml(
     xmlNode("fantasy_content", xmlNode("transaction", nodes)),
   );

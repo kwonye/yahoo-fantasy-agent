@@ -2,7 +2,8 @@ import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { afterEach, describe, expect, it } from "vitest";
 import { createMcpServer } from "../src/mcp/server.js";
 import { toolNames } from "../src/mcp/tools.js";
-import type { YahooApi } from "../src/mcp/types.js";
+import type { McpRuntime, YahooApi } from "../src/mcp/types.js";
+import { YahooError } from "../src/yahoo/errors.js";
 
 interface RecordedCall {
   method: string;
@@ -10,9 +11,15 @@ interface RecordedCall {
   body?: string | undefined;
 }
 
-function yahooMock(calls: RecordedCall[]): YahooApi {
+function yahooMock(calls: RecordedCall[], failure?: unknown): YahooApi {
   const response = (method: string, path: string, body?: string) => {
     calls.push({ method, path, body });
+    if (failure !== undefined)
+      return Promise.reject(
+        failure instanceof Error
+          ? failure
+          : new Error(JSON.stringify(failure) ?? "unknown rejection"),
+      );
     return Promise.resolve({ status: 200, data: { method, path, body } });
   };
   return {
@@ -28,8 +35,14 @@ afterEach(async () => {
   await Promise.all(closeCallbacks.splice(0).map((close) => close()));
 });
 
-async function connectedClient(api: YahooApi): Promise<Client> {
-  const server = createMcpServer({ yahoo: api });
+async function connectedClient(
+  api: YahooApi,
+  doctor?: McpRuntime["doctor"],
+): Promise<Client> {
+  const server = createMcpServer({
+    yahoo: api,
+    ...(doctor === undefined ? {} : { doctor }),
+  });
   const client = new Client({ name: "test-client", version: "1.0.0" });
   const [clientTransport, serverTransport] =
     InMemoryTransport.createLinkedPair();
@@ -79,6 +92,80 @@ describe("Yahoo Fantasy MCP", () => {
         body: undefined,
       },
     ]);
+  });
+
+  it("exposes the runtime diagnosis as a read-only tool", async () => {
+    const client = await connectedClient(yahooMock([]), () => ({
+      ready: false,
+      nextAction: "Run the auth command",
+    }));
+    const result = await client.callTool({
+      name: "yahoo_diagnose",
+      arguments: {},
+    });
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toEqual({
+      ready: false,
+      nextAction: "Run the auth command",
+    });
+  });
+
+  it("returns actionable authentication errors with Yahoo metadata", async () => {
+    const calls: RecordedCall[] = [];
+    const client = await connectedClient(
+      yahooMock(
+        calls,
+        new YahooError("authentication", "Yahoo access token is invalid", {
+          status: 401,
+          requestId: "request-123",
+        }),
+      ),
+    );
+    const result = await client.callTool({
+      name: "yahoo_user_games",
+      arguments: {},
+    });
+    expect(result).toMatchObject({
+      isError: true,
+      structuredContent: {
+        error: {
+          code: "AUTH_REQUIRED",
+          message: "Yahoo access token is invalid",
+          retryable: false,
+          status: 401,
+          requestId: "request-123",
+        },
+      },
+    });
+    expect(JSON.stringify(result.structuredContent)).toContain(
+      "yahoo-fantasy-mcp auth",
+    );
+    expect(calls).toHaveLength(1);
+  });
+
+  it("returns retry guidance and retry timing for rate limits", async () => {
+    const client = await connectedClient(
+      yahooMock(
+        [],
+        new YahooError("rate_limit", "Yahoo rate limit exceeded", {
+          status: 429,
+          retryAfterMs: 2_500,
+        }),
+      ),
+    );
+    const result = await client.callTool({
+      name: "yahoo_user_games",
+      arguments: {},
+    });
+    expect(result.structuredContent).toMatchObject({
+      error: {
+        code: "RATE_LIMITED",
+        action: "Wait at least 3 seconds before retrying the request.",
+        retryable: true,
+        status: 429,
+        retryAfterMs: 2_500,
+      },
+    });
   });
 
   it("sends exact write methods and XML without a confirmation field", async () => {

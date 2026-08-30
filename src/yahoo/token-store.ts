@@ -7,6 +7,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname } from "node:path";
+import { YahooError } from "./errors.js";
 
 export interface YahooToken {
   accessToken: string;
@@ -45,7 +46,10 @@ export function tokenFromResponse(
     typeof response.access_token !== "string" ||
     response.access_token.trim() === ""
   ) {
-    throw new Error("Yahoo OAuth response did not include an access token");
+    throw new YahooError(
+      "authentication",
+      "Yahoo OAuth response did not include an access token",
+    );
   }
   const expiresAtRaw = numberOrUndefined(response.expires_at);
   const expiresIn = numberOrUndefined(response.expires_in);
@@ -133,7 +137,8 @@ export class SecureTokenStore {
       return parseToken(JSON.parse(content) as unknown);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-      throw new Error(
+      throw new YahooError(
+        "token_store",
         `Unable to read Yahoo token store: ${error instanceof Error ? error.message : String(error)}`,
         { cause: error },
       );
@@ -142,7 +147,10 @@ export class SecureTokenStore {
 
   public async write(token: YahooToken): Promise<void> {
     if (!token.accessToken)
-      throw new Error("Cannot persist an empty Yahoo access token");
+      throw new YahooError(
+        "token_store",
+        "Cannot persist an empty Yahoo access token",
+      );
     const directory = dirname(this.path);
     await mkdir(directory, { recursive: true, mode: 0o700 });
     await chmod(directory, 0o700).catch(() => undefined);
@@ -160,7 +168,8 @@ export class SecureTokenStore {
       await chmod(this.path, 0o600);
     } catch (error) {
       await rm(temporaryPath, { force: true }).catch(() => undefined);
-      throw new Error(
+      throw new YahooError(
+        "token_store",
         `Unable to write Yahoo token store: ${error instanceof Error ? error.message : String(error)}`,
         { cause: error },
       );

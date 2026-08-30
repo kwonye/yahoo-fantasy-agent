@@ -1,6 +1,7 @@
 export type YahooErrorKind =
   | "configuration"
   | "authentication"
+  | "token_store"
   | "permission"
   | "validation"
   | "not_found"

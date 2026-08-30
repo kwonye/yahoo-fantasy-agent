@@ -202,7 +202,12 @@ export class YahooOAuth {
           : typeof value.error === "string"
             ? value.error
             : `Yahoo OAuth failed (${response.status})`;
-      throw new YahooError("authentication", description, {
+      const kind =
+        value.error === "invalid_client" ||
+        value.error === "invalid_redirect_uri"
+          ? "configuration"
+          : "authentication";
+      throw new YahooError(kind, description, {
         status: response.status,
       });
     }

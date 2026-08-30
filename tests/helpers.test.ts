@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { matrix, safeAdvancedPath } from "../src/mcp/helpers.js";
+import { errorPayload, matrix, safeAdvancedPath } from "../src/mcp/helpers.js";
+import { YahooError } from "../src/yahoo/errors.js";
 
 describe("MCP path helpers", () => {
   it("uses Yahoo matrix parameters without damaging comma-separated values", () => {
@@ -22,5 +23,43 @@ describe("MCP path helpers", () => {
     expect(() => safeAdvancedPath("/fantasy/v2/unknown/path")).toThrow(
       "resource",
     );
+  });
+
+  it.each([
+    ["configuration", "CONFIGURATION_ERROR", false],
+    ["authentication", "AUTH_REQUIRED", false],
+    ["token_store", "TOKEN_STORE_ERROR", false],
+    ["permission", "FORBIDDEN", false],
+    ["validation", "INVALID_ARGUMENT", false],
+    ["not_found", "NOT_FOUND", false],
+    ["rate_limit", "RATE_LIMITED", true],
+    ["network", "NETWORK_ERROR", true],
+    ["upstream", "YAHOO_ERROR", true],
+    ["parse", "INVALID_RESPONSE", true],
+  ] as const)("adds an action for %s failures", (kind, code, retryable) => {
+    const payload = errorPayload(new YahooError(kind, "failure"));
+    expect(payload).toMatchObject({
+      code,
+      message: "failure",
+      retryable,
+    });
+    expect(payload.action).toBeTypeOf("string");
+  });
+
+  it("redacts secrets while preserving actionable error metadata", () => {
+    const payload = errorPayload(
+      new YahooError("authentication", "Authorization: Bearer top-secret", {
+        status: 401,
+        requestId: "request-1",
+      }),
+    );
+    expect(payload).toMatchObject({
+      code: "AUTH_REQUIRED",
+      retryable: false,
+      status: 401,
+      requestId: "request-1",
+    });
+    expect(payload.action).toContain("yahoo-fantasy-mcp auth");
+    expect(payload.message).not.toContain("top-secret");
   });
 });

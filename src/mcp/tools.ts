@@ -18,6 +18,7 @@ import {
   safeAdvancedPath,
   safely,
   userPath,
+  YahooToolError,
 } from "./helpers.js";
 import type { McpRuntime, YahooApi } from "./types.js";
 
@@ -91,6 +92,29 @@ function coverage(args: {
   if (args.week !== undefined) return { type: "week", week: args.week };
   if (args.date !== undefined) return { type: "date", date: args.date };
   return {};
+}
+
+function registerDiagnosticTool(server: McpServer, runtime: McpRuntime): void {
+  const empty = z.object({}).strict();
+  add(
+    server,
+    "yahoo_diagnose",
+    "Check Yahoo configuration, authentication, token storage, and API reachability. Call this first when a Yahoo request fails.",
+    empty,
+    () => {
+      if (!runtime.doctor)
+        throw new YahooToolError(
+          "Yahoo diagnostics are unavailable in this runtime",
+          "YAHOO_ERROR",
+          {
+            action:
+              "Retry the request. If it continues to fail, run `yahoo-fantasy-mcp doctor` directly.",
+            retryable: false,
+          },
+        );
+      return Promise.resolve(runtime.doctor());
+    },
+  );
 }
 
 function registerReadTools(server: McpServer, api: YahooApi): void {
@@ -660,12 +684,14 @@ export function registerYahooTools(
   server: McpServer,
   runtime: McpRuntime,
 ): void {
+  registerDiagnosticTool(server, runtime);
   registerReadTools(server, runtime.yahoo);
   registerWriteTools(server, runtime.yahoo);
   registerAdvancedGet(server, runtime.yahoo);
 }
 
 export const toolNames = [
+  "yahoo_diagnose",
   "yahoo_user_games",
   "yahoo_user_leagues",
   "yahoo_user_teams",

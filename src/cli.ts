@@ -14,7 +14,7 @@ import {
   type HttpConfigOverrides,
 } from "./config.js";
 import type { YahooHttpServerHandle } from "./http.js";
-import { safely, stringify } from "./mcp/helpers.js";
+import { errorPayload, safely, stringify } from "./mcp/helpers.js";
 import type { McpRuntime } from "./mcp/types.js";
 
 export interface CliDependencies {
@@ -268,7 +268,10 @@ function isDirectInvocation(invokedPath: string | undefined): boolean {
 
 if (isDirectInvocation(process.argv[1])) {
   runCli().catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : String(error));
+    const details = errorPayload(error);
+    console.error(
+      `${String(details.code)}: ${String(details.message)}\nAction: ${String(details.action)}`,
+    );
     process.exitCode = 1;
   });
 }

@@ -94,6 +94,50 @@ describe("YahooClient", () => {
     expect(fetchImpl).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    [401, "authentication"],
+    [403, "permission"],
+    [404, "not_found"],
+    [422, "validation"],
+    [429, "rate_limit"],
+    [500, "upstream"],
+  ] as const)("classifies Yahoo HTTP %s as %s", async (status, kind) => {
+    const fetchImpl = vi.fn<
+      (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+    >(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ description: "Yahoo failure" }), {
+          status,
+          headers: {
+            "content-type": "application/json",
+            "x-request-id": "request-456",
+            ...(status === 429 ? { "retry-after": "2" } : {}),
+          },
+        }),
+      ),
+    );
+    const client = new YahooClient(config, oauth() as never, { fetchImpl });
+    await expect(
+      client.post("game/nfl", "<fantasy_content/>", { retries: 0 }),
+    ).rejects.toMatchObject({
+      kind,
+      status,
+      requestId: "request-456",
+      ...(status === 429 ? { retryAfterMs: 2_000 } : {}),
+    });
+  });
+
+  it("classifies network failures without exposing the underlying error", async () => {
+    const fetchImpl = vi.fn<
+      (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+    >(() => Promise.reject(new Error("socket details")));
+    const client = new YahooClient(config, oauth() as never, { fetchImpl });
+    await expect(client.get("game/nfl", { retries: 0 })).rejects.toMatchObject({
+      kind: "network",
+      message: "Unable to reach Yahoo API (GET game/nfl)",
+    });
+  });
+
   it("rejects absolute URLs and redacts bearer tokens in errors", async () => {
     const client = new YahooClient(config, oauth() as never, {
       fetchImpl: vi.fn(),

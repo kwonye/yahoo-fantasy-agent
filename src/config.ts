@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { YahooError } from "./yahoo/errors.js";
 
 /** Environment variables and defaults used by the Yahoo integration. */
 export interface YahooConfig {
@@ -59,6 +60,13 @@ export interface ConfigEnvironment {
   readonly XDG_CONFIG_HOME?: string;
 }
 
+export interface YahooConfigStatus {
+  readonly configured: boolean;
+  readonly missing: readonly string[];
+  readonly tokenPath: string;
+  readonly error?: string;
+}
+
 const DEFAULT_API_BASE_URL = "https://fantasysports.yahooapis.com/fantasy/v2";
 const DEFAULT_OAUTH_BASE_URL = "https://api.login.yahoo.com";
 const DEFAULT_REDIRECT_URI = "oob";
@@ -72,11 +80,15 @@ const LOCALHOST_HOSTNAMES = ["localhost", "127.0.0.1", "[::1]"] as const;
 // query parameter opt-in for applications that explicitly configure one.
 const DEFAULT_SCOPES = [] as const;
 
+function configurationError(message: string): YahooError {
+  return new YahooError("configuration", message);
+}
+
 function positiveInteger(value: string | undefined, fallback: number): number {
   if (value === undefined || value.trim() === "") return fallback;
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-    throw new Error(
+    throw configurationError(
       `Configuration value must be a positive integer, received ${JSON.stringify(value)}`,
     );
   }
@@ -87,7 +99,7 @@ function boundedPort(value: string | undefined, fallback: number): number {
   if (value === undefined || value.trim() === "") return fallback;
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 65_535) {
-    throw new Error(
+    throw configurationError(
       `HTTP port must be an integer between 0 and 65535, received ${JSON.stringify(value)}`,
     );
   }
@@ -102,7 +114,7 @@ function nonEmpty(value: string | undefined, fallback: string): string {
 function normalizePath(value: string | undefined, fallback: string): string {
   const path = nonEmpty(value, fallback);
   if (!path.startsWith("/") || path.includes("?") || path.includes("#")) {
-    throw new Error(
+    throw configurationError(
       `MCP HTTP path must start with / and contain no query or fragment, received ${JSON.stringify(path)}`,
     );
   }
@@ -119,7 +131,7 @@ function csv(value: string | undefined): readonly string[] {
 function responseMode(value: string | undefined): HttpResponseMode {
   const mode = value?.trim() || DEFAULT_HTTP_RESPONSE_MODE;
   if (mode !== "auto" && mode !== "sse" && mode !== "json") {
-    throw new Error(
+    throw configurationError(
       `MCP HTTP response mode must be auto, sse, or json, received ${JSON.stringify(mode)}`,
     );
   }
@@ -138,10 +150,19 @@ export function isLoopbackHost(host: string): boolean {
 function required(value: string | undefined, name: string): string {
   const trimmed = value?.trim();
   if (!trimmed)
-    throw new Error(
+    throw configurationError(
       `${name} is required; set it in the environment before starting Yahoo Fantasy MCP`,
     );
   return trimmed;
+}
+
+function tokenPathFor(environment: ConfigEnvironment): string {
+  const configHome =
+    environment.XDG_CONFIG_HOME?.trim() || join(homedir(), ".config");
+  return (
+    environment.YAHOO_TOKEN_PATH?.trim() ||
+    join(configHome, "yahoo-fantasy-mcp", "token.json")
+  );
 }
 
 /**
@@ -152,11 +173,7 @@ function required(value: string | undefined, name: string): string {
 export function loadConfig(
   environment: ConfigEnvironment = process.env,
 ): YahooConfig {
-  const configHome =
-    environment.XDG_CONFIG_HOME?.trim() || join(homedir(), ".config");
-  const tokenPath =
-    environment.YAHOO_TOKEN_PATH?.trim() ||
-    join(configHome, "yahoo-fantasy-mcp", "token.json");
+  const tokenPath = tokenPathFor(environment);
   const scopes = (environment.YAHOO_SCOPE?.trim() || DEFAULT_SCOPES.join(" "))
     .split(/[\s,]+/)
     .map((scope) => scope.trim())
@@ -189,6 +206,29 @@ export function loadConfig(
   };
 }
 
+/** Return safe configuration diagnostics without requiring Yahoo credentials. */
+export function inspectConfig(
+  environment: ConfigEnvironment = process.env,
+): YahooConfigStatus {
+  const missing: string[] = [];
+  if (!environment.YAHOO_CLIENT_ID?.trim()) missing.push("YAHOO_CLIENT_ID");
+  if (!environment.YAHOO_CLIENT_SECRET?.trim())
+    missing.push("YAHOO_CLIENT_SECRET");
+  const tokenPath = tokenPathFor(environment);
+  if (missing.length > 0) return { configured: false, missing, tokenPath };
+  try {
+    loadConfig(environment);
+    return { configured: true, missing, tokenPath };
+  } catch (error) {
+    return {
+      configured: false,
+      missing,
+      tokenPath,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 /**
  * Resolve and validate the optional MCP Streamable HTTP listener configuration.
  * The bearer token is intentionally environment-only so it cannot leak through
@@ -206,7 +246,9 @@ export function loadHttpConfig(
   const port =
     overrides.port ?? boundedPort(environment.MCP_HTTP_PORT, DEFAULT_HTTP_PORT);
   if (!Number.isSafeInteger(port) || port < 0 || port > 65_535) {
-    throw new Error(`MCP HTTP port must be an integer between 0 and 65535`);
+    throw configurationError(
+      `MCP HTTP port must be an integer between 0 and 65535`,
+    );
   }
   const path = normalizePath(
     overrides.path ?? environment.MCP_HTTP_PATH,
@@ -234,12 +276,12 @@ export function loadHttpConfig(
       : [];
 
   if (!loopback && !token) {
-    throw new Error(
+    throw configurationError(
       "MCP_HTTP_TOKEN is required when MCP HTTP binds beyond loopback",
     );
   }
   if (!loopback && allowedHosts.length === 0) {
-    throw new Error(
+    throw configurationError(
       "MCP_HTTP_ALLOWED_HOSTS is required when MCP HTTP binds beyond loopback",
     );
   }
