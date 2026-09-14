@@ -1,3 +1,6 @@
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/client";
 import {
   getDefaultEnvironment,
@@ -14,6 +17,7 @@ describe("stdio executable", () => {
       args: ["--import", "tsx", "src/cli.ts"],
       env: {
         ...getDefaultEnvironment(),
+        YAHOO_FANTASY_DATA_DIR: await mkdtemp(join(tmpdir(), "yahoo-stdio-")),
         YAHOO_CLIENT_ID: "stdio-test-client",
         YAHOO_CLIENT_SECRET: "stdio-test-secret",
         YAHOO_REDIRECT_URI: "oob",
@@ -45,7 +49,10 @@ describe("stdio executable", () => {
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: ["--import", "tsx", "src/cli.ts"],
-      env,
+      env: {
+        ...env,
+        YAHOO_FANTASY_DATA_DIR: await mkdtemp(join(tmpdir(), "yahoo-stdio-")),
+      },
       stderr: "pipe",
     });
 

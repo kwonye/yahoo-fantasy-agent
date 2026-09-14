@@ -40,6 +40,8 @@ export interface HttpConfigOverrides {
 }
 
 export interface ConfigEnvironment {
+  readonly YAHOO_FANTASY_DATA_DIR?: string;
+  readonly PLUGIN_DATA?: string;
   readonly YAHOO_CLIENT_ID?: string;
   readonly YAHOO_CLIENT_SECRET?: string;
   readonly YAHOO_REDIRECT_URI?: string;
@@ -157,11 +159,23 @@ function required(value: string | undefined, name: string): string {
 }
 
 function tokenPathFor(environment: ConfigEnvironment): string {
-  const configHome =
-    environment.XDG_CONFIG_HOME?.trim() || join(homedir(), ".config");
   return (
     environment.YAHOO_TOKEN_PATH?.trim() ||
-    join(configHome, "yahoo-fantasy-mcp", "token.json")
+    join(fantasyDataDirectory(environment), "token.json")
+  );
+}
+
+/** Shared by npx, global CLI, OAuth, and plugin-host launches. */
+export function fantasyDataDirectory(
+  environment: ConfigEnvironment = process.env,
+): string {
+  return (
+    environment.YAHOO_FANTASY_DATA_DIR?.trim() ||
+    environment.PLUGIN_DATA?.trim() ||
+    join(
+      environment.XDG_CONFIG_HOME?.trim() || join(homedir(), ".config"),
+      "yahoo-fantasy-mcp",
+    )
   );
 }
 

@@ -1,0 +1,29 @@
+{
+  "name": "yahoo-fantasy-agent",
+  "version": "1.1.0",
+  "description": "Autonomous Yahoo Fantasy Football management with league-specific research, strategy, and journaled roster actions.",
+  "author": {
+    "name": "kwonye",
+    "url": "https://github.com/kwonye"
+  },
+  "homepage": "https://github.com/kwonye/yahoo-fantasy-agent",
+  "repository": "https://github.com/kwonye/yahoo-fantasy-agent",
+  "license": "ISC",
+  "keywords": ["fantasy-football", "yahoo", "agent", "mcp"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Yahoo Fantasy Football Agent",
+    "shortDescription": "Research, manage, and improve your Yahoo football team",
+    "longDescription": "Autonomous Yahoo Fantasy Football management with league-specific research, strategy, and journaled roster actions.",
+    "developerName": "kwonye",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://github.com/kwonye/yahoo-fantasy-agent",
+    "defaultPrompt": [
+      "Manage my Yahoo fantasy football team",
+      "Find this week\u2019s best waiver moves",
+      "Prepare my fantasy football draft strategy"
+    ]
+  }
+}

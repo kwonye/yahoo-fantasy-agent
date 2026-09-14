@@ -38,6 +38,9 @@ jobs:
       - name: Run the full verification suite
         run: npm run verify
 
+      - name: Build the source-free plugin archive
+        run: npm run plugin:pack
+
       - name: Check the published package contents
         run: npm pack --dry-run
 
@@ -47,6 +50,7 @@ jobs:
           package_dir="$(mktemp -d)"
           npm pack --ignore-scripts --pack-destination "$package_dir" >/dev/null
           package_file="$(find "$package_dir" -maxdepth 1 -name '*.tgz' -print -quit)"
+          npm run smoke:package -- "$package_file"
           npm install --global --ignore-scripts --prefix "$package_dir/prefix" "$package_file"
           help_output="$("$package_dir/prefix/bin/yahoo-fantasy-mcp" --help)"
           printf '%s\n' "$help_output"

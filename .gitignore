@@ -16,3 +16,7 @@ coverage/
 
 # Operating-system metadata.
 .DS_Store
+
+# Distributable plugin artifacts.
+artifacts/
+*.tar.gz

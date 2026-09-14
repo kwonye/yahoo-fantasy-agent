@@ -1,13 +1,17 @@
-name: Publish to npm
+name: Publish npm and agent plugin
 
 on:
-  release:
-    types: [published]
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Committed stable version to publish (for example 1.1.0)
+        required: true
+        type: string
 
-# npm Trusted Publishing exchanges this job's short-lived OIDC identity for a
-# publish credential. Do not add an NPM_TOKEN secret to this workflow.
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 concurrency:
@@ -16,145 +20,95 @@ concurrency:
 
 jobs:
   publish:
-    name: Verify and publish the release
     runs-on: ubuntu-latest
-
     steps:
-      - name: Check out the released tag
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.release.tag_name }}
           fetch-depth: 0
-
-      - name: Set up Node.js for npm trusted publishing
-        uses: actions/setup-node@v6
+      - uses: actions/setup-node@v6
         with:
-          # npm trusted publishing requires Node >=22.14 and npm >=11.5.1.
           node-version: "24.x"
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-
-      - name: Check the trusted-publishing runtime
-        run: |
-          node --version
-          npm --version
-          node <<'NODE'
-          const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
-          if (nodeMajor < 22 || (nodeMajor === 22 && nodeMinor < 14)) {
-            throw new Error(`Node ${process.versions.node} is too old for npm trusted publishing`);
-          }
-          const [npmMajor, npmMinor, npmPatch] = require('child_process')
-            .execFileSync('npm', ['--version'], { encoding: 'utf8' })
-            .trim()
-            .split('.')
-            .map(Number);
-          if (npmMajor < 11 || (npmMajor === 11 && (npmMinor < 5 || (npmMinor === 5 && npmPatch < 1)))) {
-            throw new Error(`npm ${npmMajor}.${npmMinor}.${npmPatch} is too old for trusted publishing`);
-          }
-          NODE
-
-      - name: Validate release tag and package identity
+      - name: Validate release identity and committed version
+        id: release
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           node <<'NODE'
           const fs = require('node:fs');
-          const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-          const tag = process.env.RELEASE_TAG;
-          if (!/^v\d+\.\d+\.\d+$/.test(tag)) {
-            throw new Error(`Release tag must be a semver tag such as v2.0.0; received ${tag}`);
-          }
-          if (packageJson.private === true) {
-            throw new Error('package.json is private; refusing to publish');
-          }
-          if (packageJson.name !== '@kwonye/yahoo-fantasy-mcp') {
-            throw new Error(`Unexpected npm package name: ${packageJson.name}`);
-          }
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const version = process.env.GITHUB_EVENT_NAME === 'push'
+            ? process.env.GITHUB_REF_NAME.replace(/^v/, '') : process.env.INPUT_VERSION;
+          if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Stable semver is required');
+          if (pkg.name !== '@kwonye/yahoo-fantasy-mcp' || pkg.private || pkg.version !== version)
+            throw new Error('Commit synchronized npm/plugin versions before releasing');
+          if (pkg.repository.url !== 'git+https://github.com/kwonye/yahoo-fantasy-agent.git')
+            throw new Error('Repository metadata does not match the trusted publisher');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\ntag=v${version}\n`);
           NODE
-
-      - name: Set package version from the release tag
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          release_version="${RELEASE_TAG#v}"
-          npm version "$release_version" \
-            --no-git-tag-version \
-            --allow-same-version \
-            --ignore-scripts
-          node <<'NODE'
-          const fs = require('node:fs');
-          const expected = process.env.RELEASE_TAG.slice(1);
-          const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-          const packageLock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
-          for (const [label, actual] of [
-            ['package.json', packageJson.version],
-            ['package-lock.json', packageLock.version],
-            ['package-lock root package', packageLock.packages[''].version],
-          ]) {
-            if (actual !== expected) {
-              throw new Error(`${label} version ${actual} does not match release ${expected}`);
-            }
-          }
-          console.log(`Publishing ${packageJson.name}@${expected}`);
-          NODE
-
-      - name: Install dependencies
+      - name: Install locked dependencies
         run: npm ci
-
-      - name: Run release verification
-        run: npm run verify
-
-      - name: Check the release tarball
-        run: npm pack --dry-run
-
-      - name: Smoke-test the global executable
+      - name: Verify code, manifests, skills, and packages
+        run: |
+          npm run verify
+          npm pack --dry-run
+          npm run plugin:pack
+          npm audit --omit=dev --audit-level=high
+      - name: Test packed MCP before publishing
         run: |
           package_dir="$(mktemp -d)"
           npm pack --ignore-scripts --pack-destination "$package_dir" >/dev/null
           package_file="$(find "$package_dir" -maxdepth 1 -name '*.tgz' -print -quit)"
-          npm install --global --ignore-scripts --prefix "$package_dir/prefix" "$package_file"
-          help_output="$("$package_dir/prefix/bin/yahoo-fantasy-mcp" --help)"
-          printf '%s\n' "$help_output"
-          grep -Fq 'Usage: yahoo-fantasy-mcp' <<<"$help_output"
-
-      - name: Smoke-test the built Streamable HTTP endpoint
+          npm run smoke:package -- "$package_file"
+      - name: Check whether this exact commit is already published
+        id: existing
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: |
           node --input-type=module <<'NODE'
-          import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
-          import { serveYahooFantasyHttp } from './dist/index.js';
-
-          const runtime = {
-            yahoo: {
-              get: async (path) => ({ status: 200, data: { path } }),
-              post: async (path, body) => ({ status: 200, data: { path, body } }),
-              put: async (path, body) => ({ status: 200, data: { path, body } }),
-              delete: async (path) => ({ status: 200, data: { path } }),
-            },
-          };
-          const handle = await serveYahooFantasyHttp(runtime, {
-            config: {
-              host: '127.0.0.1',
-              port: 0,
-              path: '/mcp',
-              responseMode: 'auto',
-              allowedHosts: ['localhost', '127.0.0.1', '[::1]'],
-              allowedOrigins: ['localhost', '127.0.0.1', '[::1]'],
-            },
-          });
-          const client = new Client(
-            { name: 'release-http-smoke', version: '1.0.0' },
-            { versionNegotiation: { mode: 'auto' } },
-          );
-          try {
-            await client.connect(new StreamableHTTPClientTransport(handle.url));
-            if (client.getProtocolEra() !== 'modern') throw new Error('HTTP smoke did not negotiate modern MCP');
-            const listed = await client.listTools();
-            if (listed.tools.length < 40) throw new Error('HTTP smoke returned an incomplete tool catalog');
-          } finally {
-            await client.close();
-            await handle.close();
+          import fs from 'node:fs';
+          const response = await fetch(`https://registry.npmjs.org/@kwonye%2fyahoo-fantasy-mcp/${process.env.RELEASE_VERSION}`);
+          if (response.status === 404) {
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'published=false\n');
+          } else {
+            if (!response.ok) throw new Error(`Registry check failed: ${response.status}`);
+            const data = await response.json();
+            if (data.gitHead !== process.env.GITHUB_SHA) throw new Error('Existing npm version belongs to another commit');
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'published=true\n');
           }
           NODE
-
-      - name: Publish public package with npm trusted publishing
-        run: npm publish --access public
+      - name: Publish npm through GitHub OIDC
+        if: steps.existing.outputs.published != 'true'
+        run: npm publish --access public --provenance
+      - name: Verify registry availability and published launchers
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          node --input-type=module <<'NODE'
+          for (let attempt = 0; attempt < 12; attempt++) {
+            const response = await fetch(`https://registry.npmjs.org/@kwonye%2fyahoo-fantasy-mcp/${process.env.RELEASE_VERSION}`);
+            if (response.ok) {
+              const data = await response.json();
+              if (data.version !== process.env.RELEASE_VERSION || data.gitHead !== process.env.GITHUB_SHA)
+                throw new Error('Published version/commit mismatch');
+              process.exit(0);
+            }
+            if (response.status !== 404) throw new Error(`Registry failed: ${response.status}`);
+            await new Promise(resolve => setTimeout(resolve, 5000));
+          }
+          throw new Error('Published version is not visible in the registry');
+          NODE
+          npm run smoke:package
+      - name: Release plugin only after npm is verified
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          artifact="artifacts/yahoo-fantasy-agent-${RELEASE_VERSION}.tar.gz"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$artifact" --clobber
+          else
+            gh release create "$RELEASE_TAG" "$artifact" --target "$GITHUB_SHA" --title "Yahoo Fantasy Agent ${RELEASE_VERSION}" --generate-notes
+          fi

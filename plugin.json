@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "yahoo-fantasy-agent",
+  "version": "1.1.0",
+  "description": "Autonomous Yahoo Fantasy Football management with league-specific research, strategy, and journaled roster actions.",
+  "author": {
+    "name": "kwonye",
+    "url": "https://github.com/kwonye"
+  },
+  "homepage": "https://github.com/kwonye/yahoo-fantasy-agent",
+  "repository": "https://github.com/kwonye/yahoo-fantasy-agent",
+  "license": "ISC",
+  "keywords": ["fantasy-football", "yahoo", "agent", "mcp"]
+}

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "yahoo-fantasy": {
+      "command": "npx",
+      "args": ["--yes", "@kwonye/yahoo-fantasy-mcp@1.1.0"]
+    }
+  }
+}

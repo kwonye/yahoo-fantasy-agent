@@ -1,7 +1,7 @@
 {
   "name": "@kwonye/yahoo-fantasy-mcp",
-  "version": "1.0.0",
-  "description": "A comprehensive Model Context Protocol server for the Yahoo Fantasy Sports API",
+  "version": "1.1.0",
+  "description": "Yahoo Fantasy Football agent plugin and Yahoo Fantasy Sports MCP server",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -18,7 +18,9 @@
     "dist",
     "README.md",
     "LICENSE",
-    ".env.example"
+    ".env.example",
+    "PLUGIN.md",
+    "docs"
   ],
   "scripts": {
     "dev": "tsx src/cli.ts",
@@ -27,15 +29,19 @@
     "status": "tsx src/cli.ts status",
     "doctor": "tsx src/cli.ts doctor",
     "smoke": "tsx src/cli.ts smoke",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsx scripts/build.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run build",
-    "prepack": "npm run verify"
+    "verify": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run build && npm run plugin:validate",
+    "prepack": "npm run verify",
+    "plugin:validate": "tsx scripts/plugin.ts validate",
+    "plugin:pack": "tsx scripts/plugin.ts pack",
+    "release:version": "tsx scripts/plugin.ts version",
+    "smoke:package": "tsx scripts/smoke-package.ts"
   },
   "keywords": [
     "mcp",
@@ -47,16 +53,16 @@
     "fantasy-basketball",
     "fantasy-hockey"
   ],
-  "author": "",
+  "author": "kwonye",
   "license": "ISC",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kwonye/yahoo-fantasy-mcp.git"
+    "url": "git+https://github.com/kwonye/yahoo-fantasy-agent.git"
   },
   "bugs": {
-    "url": "https://github.com/kwonye/yahoo-fantasy-mcp/issues"
+    "url": "https://github.com/kwonye/yahoo-fantasy-agent/issues"
   },
-  "homepage": "https://github.com/kwonye/yahoo-fantasy-mcp#readme",
+  "homepage": "https://github.com/kwonye/yahoo-fantasy-agent#readme",
   "publishConfig": {
     "access": "public"
   },
@@ -67,18 +73,22 @@
     "@modelcontextprotocol/node": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
     "fast-xml-parser": "^5.11.0",
+    "proper-lockfile": "^4.1.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
     "@modelcontextprotocol/client": "2.0.0",
     "@types/node": "^26.0.0",
+    "@types/proper-lockfile": "^4.1.4",
     "@vitest/coverage-v8": "^4.1.11",
+    "ajv": "^8.20.0",
     "eslint": "^10.0.0",
     "prettier": "^3.9.0",
     "tsx": "^4.20.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.67.0",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "yaml": "^2.9.1"
   }
 }

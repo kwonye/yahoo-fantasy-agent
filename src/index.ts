@@ -1,6 +1,14 @@
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import packageJson from "../package.json" with { type: "json" };
-import { inspectConfig, loadConfig, type YahooConfigStatus } from "./config.js";
+import {
+  fantasyDataDirectory,
+  inspectConfig,
+  loadConfig,
+  type YahooConfigStatus,
+} from "./config.js";
+import { join } from "node:path";
+import { AgentService } from "./agent/service.js";
+import { AgentStore } from "./agent/store.js";
 import { errorPayload } from "./mcp/helpers.js";
 import { createMcpServer } from "./mcp/server.js";
 import type { McpRuntime, YahooApi } from "./mcp/types.js";
@@ -10,6 +18,17 @@ import { YahooOAuth } from "./yahoo/oauth.js";
 import { SecureTokenStore } from "./yahoo/token-store.js";
 
 export { createMcpServer } from "./mcp/server.js";
+export { AgentService } from "./agent/service.js";
+export { AgentStore } from "./agent/store.js";
+export { fantasyDataDirectory } from "./config.js";
+export type {
+  AgentAction,
+  TeamProfile,
+  Scope,
+  Evidence,
+  JournalAction,
+  AgentRun,
+} from "./agent/schema.js";
 export type { McpRuntime, YahooApi } from "./mcp/types.js";
 export * from "./yahoo/index.js";
 export { isLoopbackHost, loadHttpConfig } from "./config.js";
@@ -68,6 +87,7 @@ function degradedRuntime(
     const tokenState = await readTokenState(store);
     return {
       ready: false,
+      dataDirectory: fantasyDataDirectory(),
       configuration,
       token: {
         present: tokenState.token !== null,
@@ -132,7 +152,21 @@ export function serveYahooFantasy(
 
 export function loadDefaultRuntime(): Promise<McpRuntime> {
   try {
-    process.loadEnvFile();
+    const explicitDirectory =
+      process.env.YAHOO_FANTASY_DATA_DIR || process.env.PLUGIN_DATA;
+    try {
+      process.loadEnvFile(join(fantasyDataDirectory(), ".env"));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    // Legacy checkout usage still works; plugin launches never read a project's .env.
+    if (!explicitDirectory) {
+      try {
+        process.loadEnvFile();
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
       const configurationError = new YahooError(
@@ -157,6 +191,10 @@ export function loadDefaultRuntime(): Promise<McpRuntime> {
   const yahoo = new YahooClient(config, oauth);
   return Promise.resolve({
     yahoo,
+    agent: new AgentService(
+      yahoo,
+      new AgentStore(join(fantasyDataDirectory(), "agent")),
+    ),
     auth: {
       authorize: () => oauth.authorizationUrl(),
       authenticate: (code: string) => oauth.authenticate(code),
@@ -177,6 +215,8 @@ export function loadDefaultRuntime(): Promise<McpRuntime> {
     doctor: async () => {
       const tokenState = await readTokenState(store);
       const base = {
+        dataDirectory: fantasyDataDirectory(),
+        tokenPath: config.tokenPath,
         config: {
           apiBaseUrl: config.apiBaseUrl,
           oauthBaseUrl: config.oauthBaseUrl,

@@ -4,13 +4,8 @@ import type {
   ToolCallback,
 } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
-import {
-  buildRosterPayload,
-  buildTradePayload,
-  buildTransactionActionPayload,
-  buildTransactionPayload,
-  buildWaiverEditPayload,
-} from "../yahoo/writes.js";
+import { writeOperations } from "./write-operations.js";
+import { registerAgentTools, agentToolNames } from "../agent/tools.js";
 import {
   appendQuery,
   matrix,
@@ -465,200 +460,16 @@ function registerReadTools(server: McpServer, api: YahooApi): void {
 }
 
 function registerWriteTools(server: McpServer, api: YahooApi): void {
-  const lineupPlayer = z.object({ playerKey, position: nonEmpty }).strict();
-  const lineup = z
-    .object({
-      teamKey,
-      coverage: z.discriminatedUnion("type", [
-        z.object({
-          type: z.literal("week"),
-          value: z.number().int().positive(),
-        }),
-        z.object({ type: z.literal("date"), value: date }),
-      ]),
-      players: z.array(lineupPlayer).min(1).max(100),
-    })
-    .strict();
-  add(
-    server,
-    "yahoo_set_lineup",
-    "Immediately change selected player positions in a real Yahoo lineup.",
-    lineup,
-    (args) =>
-      api.put(
-        resourcePath("team", args.teamKey, "roster"),
-        buildRosterPayload(args.coverage, args.players),
-      ),
-    true,
-  );
-
-  const addPlayer = z
-    .object({
-      leagueKey,
-      teamKey,
-      playerKey,
-      faabBid: z.number().int().nonnegative().optional(),
-    })
-    .strict();
-  add(
-    server,
-    "yahoo_add_player",
-    "Add a free agent or submit a waiver claim for a player.",
-    addPlayer,
-    (args) =>
-      api.post(
-        resourcePath("league", args.leagueKey, "transactions"),
-        buildTransactionPayload({
-          type: "add",
-          faabBid: args.faabBid,
-          players: [
-            {
-              playerKey: args.playerKey,
-              transactionType: "add",
-              destinationTeamKey: args.teamKey,
-            },
-          ],
-        }),
-      ),
-    true,
-  );
-
-  const dropPlayer = z.object({ leagueKey, teamKey, playerKey }).strict();
-  add(
-    server,
-    "yahoo_drop_player",
-    "Immediately drop a player from a real Yahoo team.",
-    dropPlayer,
-    (args) =>
-      api.post(
-        resourcePath("league", args.leagueKey, "transactions"),
-        buildTransactionPayload({
-          type: "drop",
-          players: [
-            {
-              playerKey: args.playerKey,
-              transactionType: "drop",
-              sourceTeamKey: args.teamKey,
-            },
-          ],
-        }),
-      ),
-    true,
-  );
-
-  const addDrop = z
-    .object({
-      leagueKey,
-      teamKey,
-      addPlayerKey: playerKey,
-      dropPlayerKey: playerKey,
-      faabBid: z.number().int().nonnegative().optional(),
-    })
-    .strict();
-  add(
-    server,
-    "yahoo_add_drop_player",
-    "Replace one rostered player with a free agent or waiver player.",
-    addDrop,
-    (args) =>
-      api.post(
-        resourcePath("league", args.leagueKey, "transactions"),
-        buildTransactionPayload({
-          type: "add/drop",
-          faabBid: args.faabBid,
-          players: [
-            {
-              playerKey: args.addPlayerKey,
-              transactionType: "add",
-              destinationTeamKey: args.teamKey,
-            },
-            {
-              playerKey: args.dropPlayerKey,
-              transactionType: "drop",
-              sourceTeamKey: args.teamKey,
-            },
-          ],
-        }),
-      ),
-    true,
-  );
-
-  const tradePlayer = z
-    .object({ playerKey, sourceTeamKey: teamKey, destinationTeamKey: teamKey })
-    .strict();
-  const proposeTrade = z
-    .object({
-      leagueKey,
-      traderTeamKey: teamKey,
-      tradeeTeamKey: teamKey,
-      tradeNote: z.string().max(2000).optional(),
-      players: z.array(tradePlayer).min(1).max(100),
-    })
-    .strict();
-  add(
-    server,
-    "yahoo_propose_trade",
-    "Propose a real trade between Yahoo teams.",
-    proposeTrade,
-    (args) =>
-      api.post(
-        resourcePath("league", args.leagueKey, "transactions"),
-        buildTradePayload(args),
-      ),
-    true,
-  );
-
-  const editWaiver = z
-    .object({
-      transactionKey,
-      waiverPriority: z.number().int().nonnegative().optional(),
-      faabBid: z.number().int().nonnegative().optional(),
-    })
-    .strict();
-  add(
-    server,
-    "yahoo_edit_waiver",
-    "Edit the priority or FAAB bid of a pending waiver claim.",
-    editWaiver,
-    (args) =>
-      api.put(
-        resourcePath("transaction", args.transactionKey),
-        buildWaiverEditPayload(args),
-      ),
-    true,
-  );
-
-  const tradeAction = z
-    .object({
-      transactionKey,
-      action: z.enum(["accept", "reject", "allow", "disallow", "vote_against"]),
-      tradeNote: z.string().max(2000).optional(),
-      voterTeamKey: teamKey.optional(),
-    })
-    .strict();
-  add(
-    server,
-    "yahoo_trade_action",
-    "Accept, reject, allow, disallow, or vote against a pending trade.",
-    tradeAction,
-    (args) =>
-      api.put(
-        resourcePath("transaction", args.transactionKey),
-        buildTransactionActionPayload(args),
-      ),
-    true,
-  );
-
-  const cancel = z.object({ transactionKey }).strict();
-  add(
-    server,
-    "yahoo_cancel_transaction",
-    "Cancel a pending waiver claim or unaccepted trade proposal.",
-    cancel,
-    ({ transactionKey: value }) =>
-      api.delete(resourcePath("transaction", value)),
-    true,
-  );
+  for (const [name, operation] of writeOperations(api)) {
+    add(
+      server,
+      name,
+      operation.description,
+      operation.schema,
+      operation.execute,
+      true,
+    );
+  }
 }
 
 function registerAdvancedGet(server: McpServer, api: YahooApi): void {
@@ -688,9 +499,11 @@ export function registerYahooTools(
   registerReadTools(server, runtime.yahoo);
   registerWriteTools(server, runtime.yahoo);
   registerAdvancedGet(server, runtime.yahoo);
+  registerAgentTools(server, runtime);
 }
 
 export const toolNames = [
+  ...agentToolNames,
   "yahoo_diagnose",
   "yahoo_user_games",
   "yahoo_user_leagues",

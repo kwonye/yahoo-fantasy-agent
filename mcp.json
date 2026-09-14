@@ -1,0 +1,13 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "yahoo-fantasy": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["--yes", "@kwonye/yahoo-fantasy-mcp@1.1.0"],
+      "env": {
+        "YAHOO_FANTASY_DATA_DIR": "${PLUGIN_DATA}"
+      }
+    }
+  }
+}

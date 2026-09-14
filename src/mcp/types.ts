@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { YahooRequestOptions, YahooResponse } from "../yahoo/client.js";
+import type { AgentService } from "../agent/service.js";
 
 export interface YahooApi {
   get(path: string, options?: YahooRequestOptions): Promise<YahooResponse>;
@@ -18,6 +19,7 @@ export interface YahooApi {
 
 export interface McpRuntime {
   yahoo: YahooApi;
+  agent?: AgentService;
   doctor?: () => unknown;
   auth?: {
     authorize?: () => unknown;

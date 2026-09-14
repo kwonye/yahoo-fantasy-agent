@@ -23,6 +23,7 @@
     "src/**/*.ts",
     "tests/**/*.ts",
     "vitest.config.ts",
-    "eslint.config.js"
+    "eslint.config.js",
+    "scripts/**/*.ts"
   ]
 }

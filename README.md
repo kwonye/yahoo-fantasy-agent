@@ -1,10 +1,19 @@
-# Yahoo Fantasy Sports MCP
+# Yahoo Fantasy Football Agent
 
-An MCP server for Yahoo Fantasy Sports. It supports Yahoo Fantasy Football,
-Baseball, Basketball, and Hockey through local stdio or MCP v2 Streamable HTTP,
-with OAuth 2.0 authentication and typed read and write tools.
+A portable agent plugin for autonomous Yahoo fantasy football management, with the
+Yahoo Fantasy Sports MCP source maintained here and published separately as
+`@kwonye/yahoo-fantasy-mcp`. The installed agent always launches the published npm
+package through `npx`; it never builds or executes this repository’s MCP source.
 
-[![CI](https://github.com/kwonye/yahoo-fantasy-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/kwonye/yahoo-fantasy-mcp/actions/workflows/ci.yml)
+The host supplies reasoning, web research, scheduling, and notifications.
+[Install and use the plugin](PLUGIN.md), read the [runtime contract](docs/agent-runtime.md),
+or use the standalone MCP below. Existing football, baseball, basketball, and
+hockey tools remain available through stdio and MCP v2 Streamable HTTP.
+
+The previous standalone agent repository is preserved at
+[`kwonye/yahoo-fantasy-agent-legacy`](https://github.com/kwonye/yahoo-fantasy-agent-legacy).
+
+[![CI](https://github.com/kwonye/yahoo-fantasy-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/kwonye/yahoo-fantasy-agent/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@kwonye/yahoo-fantasy-mcp)](https://www.npmjs.com/package/@kwonye/yahoo-fantasy-mcp)
 
 ## Install and run
@@ -260,52 +269,45 @@ npm pack --dry-run
 production build. GitHub Actions runs this verification and the package dry run
 on Node.js 20, 22, and 24 for pushes and pull requests.
 
-Publishing is performed by `.github/workflows/publish.yml` after a GitHub
-Release is published. The release tag is authoritative: publishing `v1.2.3`
-automatically sets both package manifests to `1.2.3` inside the release job,
-then verifies and publishes that exact version. A manual package-version edit
-is not required. This workflow accepts stable `v<major>.<minor>.<patch>` tags;
-it rejects prereleases so they cannot accidentally become npm's `latest`
-version. The public scoped package receives automatic provenance from this
-public GitHub repository.
+### Plugin and npm releases
 
-Because npm requires a package to exist before a trusted publisher can be
-configured, bootstrap the currently unpublished package once from a protected
-developer machine:
+The repository maintains MCP source under `src/`, football skills under `skills/`,
+and portable/Codex plugin manifests at the root. The plugin archive contains only
+manifests, skills, its installation guide, and the license. MCP source, `.env`,
+tokens, `node_modules`, and runtime state are excluded. Developer builds are for
+testing and publishing the npm package, not for running an installed agent.
 
 ```sh
-npm ci
-npm run verify
-npm pack --dry-run
-npm login                 # use an npm account with 2FA enabled
-npm publish --access public # publishes the initial 1.0.0 package
+npm run plugin:validate
+npm run plugin:pack
+npm run release:version -- 1.1.0
 ```
 
-Do not put an npm token in the repository or in GitHub Actions. After the
-bootstrap publish, configure npm Trusted Publishing for
-`@kwonye/yahoo-fantasy-mcp`:
+`release:version` synchronizes npm manifests, plugin metadata, connection pins,
+and skill/installation examples. Commit the synchronized result, then push a
+matching stable `v<version>` tag. `.github/workflows/publish.yml` also supports a
+manual run with that committed version. It verifies the code and artifacts,
+publishes npm through GitHub OIDC, verifies the exact package from the registry,
+smoke-tests its `npx` and global executable from isolated directories, and only
+then creates the GitHub release with the plugin archive. Failed registry or
+launcher verification prevents the plugin release. An existing npm version can
+be resumed only when its recorded Git commit matches the release commit.
 
-1. On npm, open the package's **Trusted Publishers** settings and add **GitHub
-   Actions**.
-2. Set the owner to `kwonye`, repository to
-   `yahoo-fantasy-mcp`, workflow filename to `publish.yml`, and select
-   the `npm publish` action. If you use a GitHub deployment environment, enter
-   its exact name too.
-3. Ensure `package.json`'s `repository.url` remains the exact GitHub repository
-   URL and publish a release with the desired `v<version>` tag.
+Configure npm Trusted Publishing for `@kwonye/yahoo-fantasy-mcp` with owner
+`kwonye`, repository `yahoo-fantasy-agent`, and workflow `publish.yml`. The
+repository rename requires updating this existing setting in npm package access;
+changing YAML alone cannot update npm's trust record. Do not add an `NPM_TOKEN`.
+Publishing uses Node.js 24 and a current npm CLI supporting trusted publishing.
+See [npm's trusted publisher documentation](https://docs.npmjs.com/trusted-publishers/).
 
-The bootstrap package already occupies version `1.0.0`, so the first GitHub
-Release handled by this workflow must use the next package version (for
-example, create the `v1.0.1` release). The workflow applies that version
-automatically and avoids asking npm to publish the same immutable version
-twice.
+A plugin release requires its referenced npm version to exist. A checkout may
+contain an unreleased next-version pin during development; do not distribute
+that plugin until the release workflow has verified npm availability. The
+production plugin never substitutes a local source build when npm is unavailable.
 
-The workflow uses GitHub's OIDC identity (`id-token: write`) and npm's current
-trusted-publishing protocol; no long-lived `NPM_TOKEN` secret is required.
-npm's [trusted publishers documentation](https://docs.npmjs.com/trusted-publishers/)
-requires npm CLI 11.5.1 or newer and Node.js 22.14.0 or newer for the publish
-job. Once the scoped package has been bootstrapped publicly, trusted publishes
-from this public repository receive npm's automatic provenance attestation.
+For behavioral checks beyond transport/runtime tests, use the
+[skill evaluation scenarios](docs/skill-evaluation.md). Credentialed Yahoo tests
+require separate local setup; CI never submits live roster transactions.
 
 ## Attribution and license
 
