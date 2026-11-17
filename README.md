@@ -259,6 +259,12 @@ for invalid-grant, callback, and application-type errors.
 
 ## Development and releases
 
+Automatic CI keeps the complete verification, package/HTTP smoke tests, and
+production-dependency audit on the minimum supported Node.js version (20.19.x).
+Use **Actions → CI → Run workflow** to also check Node.js 22.x and 24.x.
+There is no checked-in Git hook replacing this gate, so automatic tests remain.
+The publishing workflow is unchanged.
+
 ```sh
 npm ci
 npm run verify

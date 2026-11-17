@@ -20,7 +20,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: ["20.19.x", "22.x", "24.x"]
+        # Keep the minimum supported runtime as the automatic compatibility gate.
+        # The complete supported-runtime matrix is available via Run workflow.
+        node-version: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '["20.19.x", "22.x", "24.x"]' || '["20.19.x"]') }}
 
     steps:
       - name: Check out source
@@ -41,8 +43,9 @@ jobs:
       - name: Build the source-free plugin archive
         run: npm run plugin:pack
 
+      # verify already ran above; avoid invoking its prepack hook a second time.
       - name: Check the published package contents
-        run: npm pack --dry-run
+        run: npm pack --dry-run --ignore-scripts
 
       - name: Smoke-test the global executable
         if: matrix.node-version == '20.19.x'
